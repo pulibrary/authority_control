@@ -320,23 +320,23 @@ def lcgft_from_008(record:, conn:)
   changed_rec = false
   format = record.leader[6..7]
   rec = duplicate_record(record)
-  if music.include?(format)
+  if format =~ /^[cdij]/
     result = mus_008_lcgft(record: rec, conn: conn)
     changed_rec = result[:changed_rec]
     rec = result[:record]
-  elsif book.include?(format)
+  elsif format =~ /^[at][acdm]/
     result = book_008_lcgft(record: rec, conn: conn)
     changed_rec = result[:changed_rec]
     rec = result[:record]
-  elsif map.include?(format)
+  elsif format =~ /^[ef]/
     result = map_008_lcgft(record: rec, conn: conn)
     changed_rec = result[:changed_rec]
     rec = result[:record]
-  elsif continuing_resource.include?(format)
+  elsif format =~ /^[at][bis]/
     result = cr_008_lcgft(record: rec, conn: conn)
     changed_rec = result[:changed_rec]
     rec = result[:record]
-  elsif visual.include?(format)
+  elsif format =~ /^[gkor]/
     result = visual_008_lcgft(record: rec, conn: conn)
     changed_rec = result[:changed_rec]
     rec = result[:record]
@@ -344,12 +344,20 @@ def lcgft_from_008(record:, conn:)
   { record: rec, changed_rec: changed_rec }
 end
 
+def arranged_genre_field
+  uri = 'http://id.loc.gov/authorities/genreForms/gf2014027203'
+  MARC::DataField.new('655', ' ', '7',
+                      MARC::Subfield.new('a', 'Arrangements (Music)'),
+                      MARC::Subfield.new('2', 'lcgft'),
+                      MARC::Subfield.new('0', uri))
+end
+
 def mus_lcgft_from_subject(record:, conn:)
   form_subfield_codes = %w[v x]
   changed_rec = false
   arranged = false
   format = record.leader[6..7]
-  return { record: record, changed_rec: changed_rec } unless music.include?(format)
+  return { record: record, changed_rec: changed_rec } unless format =~ /^[cdij]/
   rec = duplicate_record(record)
   relevant_fields = rec.fields('650')
   return { record: rec, changed_rec: changed_rec } if relevant_fields.empty?
