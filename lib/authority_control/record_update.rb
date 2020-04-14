@@ -9,15 +9,15 @@ def authorize_record(record:, conn:, remove_uris: false)
   format = record.leader[6]
   changed_rec = false
   bad_rec = false
-  result = local_add_nametitle_uri(record: record, conn: conn)
+  result = add_nametitle_uri(record: record, conn: conn)
   rec = result[:record]
   changed_rec = result[:changed_rec]
   bad_rec = result[:bad_rec]
-  result = local_add_subject_uri(record: rec, conn: conn)
+  result = add_subject_uri(record: rec, conn: conn)
   rec = result[:record]
   changed_rec = true if result[:changed_rec]
   bad_rec = true if result[:bad_rec]
-  result = add_local_lcgft_uri(record: rec, conn: conn)
+  result = add_lcgft_uri(record: rec, conn: conn)
   rec = result[:record]
   changed_rec = true if result[:changed_rec]
   bad_rec = true if result[:bad_rec]
@@ -139,7 +139,7 @@ def duplicate_record(record)
 end
 
 ### Look up term in MySQL database, add URI if valid
-def add_local_lcgft_uri(record:, conn:)
+def add_lcgft_uri(record:, conn:)
   changed_rec = false
   bad_rec = false
   heading_subfields = %w[a]
