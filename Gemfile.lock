@@ -9,11 +9,14 @@ GIT
 GEM
   remote: https://rubygems.org/
   specs:
+    ast (2.4.0)
+    diff-lcs (1.3)
     faraday (1.0.0)
       multipart-post (>= 1.2, < 3)
     io-console (0.5.6)
     irb (1.2.3)
       reline (>= 0.0.1)
+    jaro_winkler (1.5.4)
     marc (1.0.4)
       scrub_rb (>= 1.0.1, < 2)
       unf
@@ -22,12 +25,40 @@ GEM
     mysql2 (0.5.3)
     nokogiri (1.10.9)
       mini_portile2 (~> 2.4.0)
+    parallel (1.19.1)
+    parser (2.7.1.1)
+      ast (~> 2.4.0)
+    rainbow (3.0.0)
     reline (0.1.3)
       io-console (~> 0.5)
+    rexml (3.2.4)
+    rspec (3.9.0)
+      rspec-core (~> 3.9.0)
+      rspec-expectations (~> 3.9.0)
+      rspec-mocks (~> 3.9.0)
+    rspec-core (3.9.1)
+      rspec-support (~> 3.9.1)
+    rspec-expectations (3.9.1)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.9.0)
+    rspec-mocks (3.9.1)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.9.0)
+    rspec-support (3.9.2)
+    rubocop (0.82.0)
+      jaro_winkler (~> 1.5.1)
+      parallel (~> 1.10)
+      parser (>= 2.7.0.1)
+      rainbow (>= 2.2.2, < 4.0)
+      rexml
+      ruby-progressbar (~> 1.7)
+      unicode-display_width (>= 1.4.0, < 2.0)
+    ruby-progressbar (1.10.1)
     scrub_rb (1.0.1)
     unf (0.1.4)
       unf_ext
     unf_ext (0.0.7.6)
+    unicode-display_width (1.7.0)
 
 PLATFORMS
   ruby
@@ -39,6 +70,8 @@ DEPENDENCIES
   marc_cleanup!
   mysql2 (~> 0.5.3)
   nokogiri (~> 1.10.9)
+  rspec
+  rubocop (~> 0.82.0)
 
 BUNDLED WITH
    2.1.4

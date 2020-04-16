@@ -6,3 +6,6 @@ gem 'faraday', '~> 1.0'
 gem 'nokogiri', '~> 1.10.9'
 gem 'mysql2', '~> 0.5.3'
 gem 'marc_cleanup', github: "pulibrary/marc_cleanup", tag: 'v0.8.9'
+#gem 'capistrano'
+gem "rspec"
+gem "rubocop", "~> 0.82.0", require: false
