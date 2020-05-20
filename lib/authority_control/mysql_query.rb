@@ -1,3 +1,25 @@
+def all_uris
+  %(
+    SELECT uri
+    FROM lccn_to_uri
+  )
+end
+
+def delete_by_lccn_query(table_name)
+  %(
+    DELETE FROM #{table_name}
+    WHERE lccn = ?
+  )
+end
+
+def lccn_from_heading_query(table_name)
+  %(
+    SELECT lccn
+    FROM #{table_name}
+    WHERE heading = ?
+  )
+end
+
 def authorized_naf_lccn_query
   %(
     SELECT lccn
@@ -69,6 +91,14 @@ def marc_and_uri_from_lccn
   )
 end
 
+def get_all_uris(conn)
+  uris = []
+  conn.query(all_uris).each do |row|
+    uris << row['uri']
+  end
+  uris
+end
+
 def get_marc_and_uri_from_lccn(conn:, lccn:)
   statement = conn.prepare(marc_and_uri_from_lccn)
   result = statement.execute(lccn)
@@ -83,9 +113,9 @@ def get_marc_and_uri_from_lccn(conn:, lccn:)
   }
 end
 
-def get_lccn_from_local_db(conn:, heading:, query:)
+def get_lccn_from_local_db(conn:, heading:, table_name:)
   heading = conn.escape(heading)
-  statement = conn.prepare(query)
+  statement = conn.prepare(lccn_from_heading_query(table_name))
   result = statement.execute(heading)
   lccn = result.first['lccn'] if result.first
   lccn ||= nil

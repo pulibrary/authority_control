@@ -68,6 +68,96 @@ def populate_lcgft_database(conn:, filename:)
   end
 end
 
+def get_heading_from_marc(marc)
+  f1xx = marc.fields('100'..'199').first
+  values = {}
+  values[:tag] = f1xx.tag
+  values[:lccn] = lccn
+  values[:indicators] = f1xx.indicator1 + f1xx.indicator2
+  values[:subfields] = ''
+  values[:subfields] << f1xx.subfields[0].code
+  values[:subfields] << f1xx.subfields[0].value
+  heading_string = ''
+  f1xx.subfields[1..-1].each do |subfield|
+    values[:subfields] << "|#{subfield.code}"
+    values[:subfields] << subfield.value
+    heading_string << subfield.value
+  end
+  values[:normalized_heading] = normalize_heading_for_local_search(heading_string)
+  values
+end
+
+def subfields_for_variant_tag(tag)
+  case tag
+  when '400'
+    %w[a b c d e f g h j k l m n o p q r s t v x y z]
+  when '410'
+    %w[a b c d e f g h k l m n o p r s t v x y z ]
+  when '411'
+    %w[a c d e f g h j k l n p q s r v x y z]
+  when '430'
+    %w[a d f g h k l m n o p r s t v x y z]
+  when '450'
+    %w[a b g v x y z]
+  when '451'
+    %w[a g v x y z]
+  when '455'
+    %w[a v x y z]
+  end
+end
+
+def get_normalized_variants_from_marc(marc)
+  variants = []
+  f4xx = marc.fields('400'..'499')
+  return variants if f4xx.empty?
+  f4xx.each do |field|
+    tag = field.tag
+    wanted_subfields = subfields_for_variant_tag(tag)
+    target_subfields = field.subfields.select { |subf| wanted_subfields.include?(subf.code) }
+    string = target_subfields.map { |subf| subf.value }.join('')
+    variants << normalize_heading_for_local_search(string)
+  end
+  variants
+end
+
+### Update LCSH or NAF tables with single records retrieved from id.loc.gov
+def update_lc_database(conn:, lc_conn:, uri:)
+  heading_table_name = NAF_HEADING_TABLE_NAME
+  variant_table_name = NAF_VARIANT_TABLE_NAME
+  if uri =~ /authorities\/subjects/
+    heading_table_name = LCSH_HEADING_TABLE_NAME
+    variant_table_name = LCSH_VARIANT_TABLE_NAME
+  end
+  uri_stub = uri.gsub(/^http:\/\/id.loc.gov(.*)$/, '1.marcxml.xml')
+  response = lc_conn.get(uri_stub)
+  status = response.status
+  return status unless status == 200
+  lccn = uri.gsub(/^.*\/authorities\/[a-zA-Z]+\/(.*)$/, '\1')
+  lccn.strip!
+  delete_row_by_lccn(conn: conn, table_name: heading_table_name, lccn: lccn)
+  delete_row_by_lccn(conn: conn, table_name: variant_table_name, lccn: lccn)
+  delete_row_by_lccn(conn: conn, table_name: 'lccn_to_uri', lccn: lccn)
+  delete_row_by_lccn(conn: conn, table_name: 'lccn_to_marc', lccn: lccn)
+  insert_value_into_lccn_uri_table(conn: conn, values: { lccn: lccn, uri: uri })
+
+  reader = MARC::XMLReader.new(StringIO.new(response.body))
+  record = reader.first
+  heading = get_heading_from_marc(record)
+  insert_value_into_marc_table(conn: conn, values: heading)
+  insert_value_into_heading_table(conn: conn,
+                                  table_name: heading_table_name,
+                                  values: { heading: heading[:normalized_heading],
+                                            lccn: lccn })
+  variants = get_normalized_variants_from_marc(record)
+  variants.each do |string|
+    insert_value_into_heading_table(conn: conn,
+                                    table_name: variant_table_name,
+                                    values: { heading: string,
+                                              lccn: lccn })
+  end
+  status
+end
+
 ### Populate tables for LCSH
 def populate_lc_database(conn:, filename:, create: false)
   if create
@@ -110,20 +200,24 @@ def populate_lc_database(conn:, filename:, create: false)
     insert_value_into_lccn_uri_table(conn: conn, values: lccn_uri_values)
     case uri
     when /authorities\/subjects/
-      heading_table_name = lcsh_heading_table_name
-      variant_table_name = lcsh_variant_table_name
+      heading_table_name = LCSH_HEADING_TABLE_NAME
+      variant_table_name = LCSH_VARIANT_TABLE_NAME
     else
-      heading_table_name = naf_heading_table_name
-      variant_table_name = naf_variant_table_name
+      heading_table_name = NAF_HEADING_TABLE_NAME
+      variant_table_name = NAF_VARIANT_TABLE_NAME
     end
     alt_labels = description.xpath('skos:altLabel')
     alt_labels.each do |alt_label|
       text = alt_label.text
       text = normalize_heading_for_local_search(heading: text)
-      insert_value_into_heading_table(conn: conn, table_name: variant_table_name, values: { heading: text, lccn: lccn })
+      insert_value_into_heading_table(conn: conn,
+                                      table_name: variant_table_name,
+                                      values: { heading: text, lccn: lccn })
     end
     auth_values = { heading: label, lccn: lccn }
-    insert_value_into_heading_table(conn: conn, table_name: heading_table_name, values: auth_values)
+    insert_value_into_heading_table(conn: conn,
+                                    table_name: heading_table_name,
+                                    values: auth_values)
     count += 1
   end
 end
@@ -138,18 +232,7 @@ def populate_marc_database(conn:, filename:, create: false)
   reader.each do |record|
     lccn = record['001'].value.strip
     next unless lccn =~ /^[a-z]+[0-9]+$/
-    f1xx = record.fields('100'..'199').first
-    values = {}
-    values[:tag] = f1xx.tag
-    values[:lccn] = lccn
-    values[:indicators] = f1xx.indicator1 + f1xx.indicator2
-    values[:subfields] = ''
-    values[:subfields] << f1xx.subfields[0].code
-    values[:subfields] << f1xx.subfields[0].value
-    f1xx.subfields[1..-1].each do |subfield|
-      values[:subfields] << "|#{subfield.code}"
-      values[:subfields] << subfield.value
-    end
+    values = get_heading_from_marc(record)
     insert_value_into_marc_table(conn: conn, values: values)
   end
 end
@@ -183,82 +266,50 @@ def duplicate_entries_headingids_query(table_name)
 end
 
 def remove_duplicate_entries_headingids(conn:, table_name:, values:)
-  del_query_name = case table_name
-                   when lcsh_heading_table_name
-                     delete_authorized_lcsh_by_headingid_query
-                   when naf_heading_table_name
-                     delete_authorized_naf_by_headingid_query
-                   when lcgft_heading_table_name
-                     delete_authorized_lcgft_by_headingid_query
-                   when lcsh_variant_table_name
-                     delete_variant_lcsh_by_headingid_query
-                   when naf_variant_table_name
-                     delete_variant_naf_by_headingid_query
-                   when lcgft_variant_table_name
-                     delete_variant_lcgft_by_headingid_query
-                   else
-                     nil
-                   end
-  return nil unless del_query_name
   ids = []
   query = conn.prepare(duplicate_entries_headingids_query(table_name))
   results = query.execute(values[:lccn], values[:heading])
   results.each { |row| ids << row['heading_id'] }
   ids.sort!
-  query = conn.prepare(del_query_name)
+  query = conn.prepare(delete_heading_by_headingid_query(table_name))
   ids[1..-1].each do |id|
     query.execute(id)
   end
 end
 
-def delete_authorized_lcsh_by_headingid_query
+def delete_heading_by_headingid_query(table_name)
   %(
-    DELETE FROM lcsh_headings
+    DELETE FROM #{table_name}
     WHERE heading_id = ?
   )
 end
 
-def delete_authorized_naf_by_headingid_query
+def delete_heading_by_string_query(table_name)
   %(
-    DELETE FROM naf_headings
-    WHERE heading_id = ?
+    DELETE FROM #{table_name}
+    WHERE heading = ?
   )
 end
 
-def delete_authorized_lcgft_by_headingid_query
+def delete_row_by_lccn_query(table_name)
   %(
-    DELETE FROM lcgft_headings
-    WHERE heading_id = ?
+    DELETE FROM #{table_name}
+    WHERE lccn = ?
   )
 end
 
-def delete_variant_lcsh_by_headingid_query
-  %(
-    DELETE FROM lcsh_variants
-    WHERE heading_id = ?
-  )
-end
-
-def delete_variant_naf_by_headingid_query
-  %(
-    DELETE FROM naf_variants
-    WHERE heading_id = ?
-  )
-end
-
-def delete_variant_lcgft_by_headingid_query
-  %(
-    DELETE FROM lcgft_variants
-    WHERE heading_id = ?
-  )
+def delete_row_by_lccn(conn:, table_name:, lccn:)
+  query = conn.prepare(delete_heading_by_lccn_query(table_name))
+  query.execute(lccn)
+  query.close
 end
 
 def delete_duplicate_entries_headingids(conn, table_name)
   entries = get_duplicate_entries(conn, table_name)
   entries.each do |entry|
     remove_duplicate_entries_headingids(conn: conn,
-                                                   table_name: table_name,
-                                                   values: entry)
+                                        table_name: table_name,
+                                        values: entry)
   end
 end
 
@@ -301,58 +352,16 @@ def lcgft_authorized_variant_heading_query
   )
 end
 
-def delete_authorized_lcsh_query
-  %(
-    DELETE FROM lcsh_headings
-    WHERE heading = ?
-  )
-end
-
-def delete_variant_lcsh_query
-  %(
-    DELETE FROM lcsh_variants
-    WHERE heading = ?
-  )
-end
-
-def delete_authorized_naf_query
-  %(
-    DELETE FROM naf_headings
-    WHERE heading = ?
-  )
-end
-
-def delete_variant_naf_query
-  %(
-    DELETE FROM naf_variants
-    WHERE heading = ?
-  )
-end
-
-def delete_authorized_lcgft_query
-  %(
-    DELETE FROM lcgft_headings
-    WHERE heading = ?
-  )
-end
-
-def delete_variant_lcgft_query
-  %(
-    DELETE FROM lcgft_variants
-    WHERE heading = ?
-  )
-end
-
 def remove_lcsh_authorized_variant_headings(conn)
   authorized_variants = []
   authorized_variant_results = conn.query(lcsh_authorized_variant_heading_query)
   authorized_variant_results.each { |row| authorized_variants << row['heading'] }
   authorized_variants.uniq!
-  query = conn.prepare(delete_authorized_lcsh_query)
+  query = conn.prepare(delete_heading_string_query(LCSH_HEADING_TABLE_NAME))
   authorized_variants.each do |heading|
     query.execute(heading)
   end
-  query = conn.prepare(delete_variant_lcsh_query)
+  query = conn.prepare(delete_heading_string_query(LCSH_VARIANT_TABLE_NAME))
   authorized_variants.each do |heading|
     query.execute(heading)
   end
@@ -363,11 +372,11 @@ def remove_naf_authorized_variant_headings(conn)
   authorized_variant_results = conn.query(naf_authorized_variant_heading_query)
   authorized_variant_results.each { |row| authorized_variants << row['heading'] }
   authorized_variants.uniq!
-  query = conn.prepare(delete_authorized_naf_query)
+  query = conn.prepare(delete_heading_string_query(NAF_HEADING_TABLE_NAME))
   authorized_variants.each do |heading|
     query.execute(heading)
   end
-  query = conn.prepare(delete_variant_naf_query)
+  query = conn.prepare(delete_heading_string_query(NAF_VARIANT_TABLE_NAME))
   authorized_variants.each do |heading|
     query.execute(heading)
   end
@@ -378,11 +387,11 @@ def remove_lcgft_authorized_variant_headings(conn)
   authorized_variant_results = conn.query(lcgft_authorized_variant_heading_query)
   authorized_variant_results.each { |row| authorized_variants << row['heading'] }
   authorized_variants.uniq!
-  query = conn.prepare(delete_authorized_lcgft_query)
+  query = conn.prepare(delete_heading_string_query(LCGFT_HEADING_TABLE_NAME))
   authorized_variants.each do |heading|
     query.execute(heading)
   end
-  query = conn.prepare(delete_variant_lcgft_query)
+  query = conn.prepare(delete_heading_string_query(LCGFT_VARIANT_TABLE_NAME))
   authorized_variants.each do |heading|
     query.execute(heading)
   end
@@ -396,7 +405,7 @@ def remove_duplicate_lcsh(conn)
   multiple_authorized_results = conn.query(multiple_lccns_heading_query(lcsh_heading_table_name))
   multiple_authorized_results.each { |row| multiple_authorized << row['heading'] }
   multiple_authorized.uniq!
-  query = conn.prepare(delete_authorized_lcsh_query)
+  query = conn.prepare(delete_heading_string_query(LCSH_HEADING_TABLE_NAME))
   multiple_authorized.each do |heading|
     query.execute(heading)
   end
@@ -404,7 +413,7 @@ def remove_duplicate_lcsh(conn)
   multiple_variant_results = conn.query(multiple_lccns_heading_query(lcsh_variant_table_name))
   multiple_variant_results.each { |row| multiple_variant << row['heading'] }
   multiple_variant.uniq!
-  query = conn.prepare(delete_variant_lcsh_query)
+  query = conn.prepare(delete_heading_string_query(LCSH_VARIANT_TABLE_NAME))
   multiple_variant.each do |heading|
     query.execute(heading)
   end
@@ -418,7 +427,7 @@ def remove_duplicate_naf(conn)
   multiple_authorized_results = conn.query(multiple_lccns_heading_query(naf_heading_table_name))
   multiple_authorized_results.each { |row| multiple_authorized << row['heading'] }
   multiple_authorized.uniq!
-  query = conn.prepare(delete_authorized_naf_query)
+  query = conn.prepare(delete_heading_string_query(NAF_HEADING_TABLE_NAME))
   multiple_authorized.each do |heading|
     query.execute(heading)
   end
@@ -426,7 +435,7 @@ def remove_duplicate_naf(conn)
   multiple_variant_results = conn.query(multiple_lccns_heading_query(naf_variant_table_name))
   multiple_variant_results.each { |row| multiple_variant << row['heading'] }
   multiple_variant.uniq!
-  query = conn.prepare(delete_variant_naf_query)
+  query = conn.prepare(delete_heading_string_query(NAF_VARIANT_TABLE_NAME))
   multiple_variant.each do |heading|
     query.execute(heading)
   end
@@ -440,7 +449,7 @@ def remove_duplicate_lcgft(conn)
   multiple_authorized_results = conn.query(multiple_lccns_heading_query(lcgft_heading_table_name))
   multiple_authorized_results.each { |row| multiple_authorized << row['heading'] }
   multiple_authorized.uniq!
-  query = conn.prepare(delete_authorized_lcgft_query)
+  query = conn.prepare(delete_heading_string_query(LCGFT_HEADING_TABLE_NAME))
   multiple_authorized.each do |heading|
     query.execute(heading)
   end
@@ -448,7 +457,7 @@ def remove_duplicate_lcgft(conn)
   multiple_variant_results = conn.query(multiple_lccns_heading_query(lcgft_variant_table_name))
   multiple_variant_results.each { |row| multiple_variant << row['heading'] }
   multiple_variant.uniq!
-  query = conn.prepare(delete_variant_lcgft_query)
+  query = conn.prepare(delete_heading_string_query(LCGFT_VARIANT_TABLE_NAME))
   multiple_variant.each do |heading|
     query.execute(heading)
   end

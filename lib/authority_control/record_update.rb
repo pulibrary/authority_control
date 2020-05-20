@@ -152,11 +152,11 @@ def add_lcgft_uri(record:, conn:)
     search_string = normalize_heading_for_local_search(heading: heading_string)
     target_lccn = get_lccn_from_local_db(conn: conn,
                                        heading: search_string,
-                                       query: authorized_lcgft_lccn_query)
+                                       table_name: LCGFT_HEADING_TABLE_NAME)
     if target_lccn.nil?
       target_lccn = get_lccn_from_local_db(conn: conn,
                                          heading: search_string,
-                                         query: variant_lcgft_lccn_query)
+                                         query: LCGFT_VARIANT_TABLE_NAME)
     end
     next unless target_lccn
     target_uri = "http://id.loc.gov/authorities/genreForms/#{target_lccn}"
@@ -215,11 +215,11 @@ def add_nametitle_uri(record:, conn:)
     search_string = normalize_heading_for_local_search(heading: heading_string)
     target_lccn = get_lccn_from_local_db(conn: conn,
                                          heading: search_string,
-                                         query: authorized_naf_lccn_query)
+                                         table_name: NAF_HEADING_TABLE_NAME)
     if target_lccn.nil?
       target_lccn = get_lccn_from_local_db(conn: conn,
                                            heading: search_string,
-                                           query: variant_naf_lccn_query)
+                                           table_name: NAF_VARIANT_TABLE_NAME)
     end
     next unless target_lccn
     heading_info = get_marc_and_uri_from_lccn(conn: conn,
@@ -321,11 +321,11 @@ def add_subject_uri(record:, conn:)
     search_string = normalize_heading_for_local_search(heading: heading_string)
     target_lccn = get_lccn_from_local_db(conn: conn,
                                          heading: search_string,
-                                         query: authorized_lcsh_lccn_query)
+                                         table_name: LCSH_HEADING_TABLE_NAME)
     if target_lccn.nil?
       target_lccn = get_lccn_from_local_db(conn: conn,
                                            heading: search_string,
-                                           query: variant_lcsh_lccn_query)
+                                           table_name: LCSH_VARIANT_TABLE_NAME)
     end
     next unless target_lccn
     heading_info = get_marc_and_uri_from_lccn(conn: conn,

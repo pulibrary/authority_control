@@ -5,7 +5,7 @@ conn = lc_conn
 
 lcgft_last_dump = Time.new(2019, 9, 26)
 naf_last_dump = Time.new(2020, 1, 9)
-lcsh_last_dump = Time.new(2020, 3, 18)
+lcsh_last_dump = Time.new(2020, 4, 1)
 
 update_uris = []
 ### LCGFT update
